@@ -167,9 +167,6 @@ int main() {
               } else if(!car_right && lane !=2) {
                 lane++;
 
-              } else if(!car_left && lane !=2) {
-                lane++;
-
               } else {
                 ref_vel -= speed_diff;
               }
