@@ -111,7 +111,7 @@ Please (do your best to) stick to [Google's C++ style guide](https://google.gith
 
 Inside the build folder the make works perfectly and the code is compiled.
 
-(img code compiled )
+![compiled](images/make_comp.png)
 
 ### The car is able to drive at least 4.32 miles without incident. 
 
@@ -119,10 +119,12 @@ Inside the build folder the make works perfectly and the code is compiled.
 
 Stays always slower than 50 mph.
 
+![Initial](images/4_on_inc.png)
+
 
 #### Does not exceed Max Acceleration and Jerk:
 
-No red flag during all the time, running for 15 miles.
+No red flag during all the time, running for 9 miles.
 
 
 #### Does not collide with any other vehicle at any time:
@@ -135,7 +137,7 @@ It is able to drive and interact with the traffic without any collision.
 Capable of maintain the lane when there are no traffic and to change lanes when there is a slower car ahead.
 
 
-(img car track best run without incident)
+![Initial](images/9_no_inc.png)
 
 
 ### Reflection
