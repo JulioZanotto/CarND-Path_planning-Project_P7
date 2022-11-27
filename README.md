@@ -105,41 +105,71 @@ using the following settings:
 
 Please (do your best to) stick to [Google's C++ style guide](https://google.github.io/styleguide/cppguide.html).
 
-## Project Instructions and Rubric
+## Rubric
 
-Note: regardless of the changes you make, your project must be buildable using
-cmake and make!
+### Code compiles correctly
+
+Inside the build folder the make works perfectly and the code is compiled.
+
+(img code compiled )
+
+### The car is able to drive at least 4.32 miles without incident. 
+
+#### Meaning that the car drives according to the speed limit:
+
+Stays always slower than 50 mph.
 
 
-## Call for IDE Profiles Pull Requests
+#### Does not exceed Max Acceleration and Jerk:
 
-Help your fellow students!
+No red flag during all the time, running for 15 miles.
 
-We decided to create Makefiles with cmake to keep this project as platform
-agnostic as possible. Similarly, we omitted IDE profiles in order to ensure
-that students don't feel pressured to use one IDE or another.
 
-However! I'd love to help people get up and running with their IDEs of choice.
-If you've created a profile for an IDE that you think other students would
-appreciate, we'd love to have you add the requisite profile files and
-instructions to ide_profiles/. For example if you wanted to add a VS Code
-profile, you'd add:
+#### Does not collide with any other vehicle at any time:
 
-* /ide_profiles/vscode/.vscode
-* /ide_profiles/vscode/README.md
+It is able to drive and interact with the traffic without any collision.
 
-The README should explain what the profile does, how to take advantage of it,
-and how to install it.
 
-Frankly, I've never been involved in a project with multiple IDE profiles
-before. I believe the best way to handle this would be to keep them out of the
-repo root to avoid clutter. My expectation is that most profiles will include
-instructions to copy files to a new location to get picked up by the IDE, but
-that's just a guess.
+#### Stays in it's lane and it is able to change lanes:
 
-One last note here: regardless of the IDE used, every submitted project must
-still be compilable with cmake and make./
+Capable of maintain the lane when there are no traffic and to change lanes when there is a slower car ahead.
 
-## How to write a README
-A well written README file can enhance your project and portfolio.  Develop your abilities to create professional README files by completing [this free course](https://www.udacity.com/course/writing-readmes--ud777).
+
+(img car track best run without incident)
+
+
+### Reflection
+
+This was a very challenging project, maybe because of the expertise needed to write better a C++ code and the lack of a software development backgrond, but a very interesting one, after hours of research and checking the mentors help by the way (thanks a lot!), and to see your code running and spend minutes watching your car drive autonomously !!
+
+It was a huge help the Q&A lecture inside the project, way easier to understand what was going on and to have a help code to avoid a really cold start. My code ended up as a mixture of the Q&A and the mentors help, and I was able to understand it all and try other parameters to understand the consequences. So as we learned the code was divided in *Prediction*, *Behave* and *Plan the Trajectory*.
+
+#### Prediction
+
+Here we get the information from the sensor fusion, giving us the parameters of the other cars in range. From here we can check their d position, s position, and speed. Here we will understand if there is a car ahead of us and slower/faster, at our sides and within the 30m range, which give us the hint that it is not safe to change lanes and so decrease speed to avoid collision with the slower car ahead. One example of situation is the car ahead is slower than us, we are getting closer, and we are in the most left lane with no one at our right side, so it is safe to move right (increase lane).
+
+Here I believe that the decrease in speed could be better tuned, as it decreases too much in order to avoid collision and the take a certain amount of time to recover, also to avoid acceleration incident. Maybe with the next class PID controller.
+
+
+#### Behavior
+
+Now we have the information regarding the traffic lets make some decisions. Here we check if there is a car ahead, and if so, we check traffic, is is safe to change lane ? 
+
+Yes, no car at our side, lets go to our adjacent permitted lane. 
+No, slow down to avoid collision.
+
+And also if we are slower than the max speed limit, increase speed based on a diff, to avoid incident.
+
+
+#### Planning
+
+Well, last part, we check the traffic on prediction, then with this information we decided what to do, on Behavior. Now lets act !
+
+This part calculates our path, our trajectory, based on the lane we want to go, our current coordinates and past positions. We create a vector to store those points and first we use points from our previous trajectory. After we set up some points in the future, like 30, 60 and 90 m ahead, we need to change these points to X and Y coordinates so we have pass these info to our spline function. The spline will give us back the points that connects them all in a smooth way to follow and avoid jerks.
+
+With all the points, from previous path and the future position, the spline will give us more points based on the spline generated, so we create 50 points based on that and switch them back to the coordinates which the simulator works on, which is fed in the json msg next_x and next_y.
+
+
+
+
 

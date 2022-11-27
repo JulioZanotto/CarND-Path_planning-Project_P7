@@ -57,9 +57,11 @@ int main() {
   //Reference velocity.
   double ref_vel = 0.0; // mph
   double speed_diff = 0.224;
-  const double max_accel = 49.5;
+  const double max_speed = 49.5;
 
-  h.onMessage([&max_accel, &speed_diff, &ref_vel, &lane, &map_waypoints_x,&map_waypoints_y,
+
+  // Car not moving, needed to pass the references for ref_vel, lane, accel and speed
+  h.onMessage([&max_speed, &speed_diff, &ref_vel, &lane, &map_waypoints_x,&map_waypoints_y,
                 &map_waypoints_s, &map_waypoints_dx, &map_waypoints_dy]
               (uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length, uWS::OpCode opCode) {
     // "42" at the start of the message means there's a websocket message event.
@@ -106,170 +108,193 @@ int main() {
            *   sequentially every .02 seconds
            */
 
+          // From class Q&A (Huge help)
           // Provided previous path point size.
-            int prev_size = previous_path_x.size();
+          int prev_size = previous_path_x.size();
 
-            // Preventing collitions.
-            if (prev_size > 0) {
-              car_s = end_path_s;
+          // Preventing collitions.
+          if (prev_size > 0) {
+            car_s = end_path_s;
+          }
+
+          // First Part: PREDICTION
+          // Check traffic position, whether there is a car in front or at our sides within 30m range.
+          bool car_ahead = false;
+          bool car_left = false;
+          bool car_right = false;
+          for(int i=0; i < sensor_fusion.size(); i++) {
+              
+            float d = sensor_fusion[i][6];
+            int check_car_lane;
+
+            // Based on d check which lane the other car is into.
+            if(d > 0 && d < 4) {
+              check_car_lane = 0;
+            } else if(d > 4 && d < 8) {
+              check_car_lane = 1;
+            } else if(d > 8 and d < 12) {
+              check_car_lane = 2;
             }
 
-            // Prediction : Analysing other cars positions.
-            bool car_ahead = false;
-            bool car_left = false;
-            bool car_right = false;
-            for(int i=0; i < sensor_fusion.size(); i++) {
-              
-              float d = sensor_fusion[i][6];
-              int check_car_lane;
+            // Based on sensor fusion, check where the other cars are and their speed.  
+            double vx = sensor_fusion[i][3];
+            double vy = sensor_fusion[i][4];
+            double check_speed = sqrt(vx*vx+vy*vy);
+            double check_car_s = sensor_fusion[i][5]; 
 
-              if(d > 0 && d < 4) {
-                check_car_lane = 0;
-              } else if(d > 4 && d < 8) {
-                check_car_lane = 1;
-              } else if(d > 8 and d < 12) {
-                check_car_lane = 2;
-              }   
-              
-              double vx = sensor_fusion[i][3];
-              double vy = sensor_fusion[i][4];
-              double check_speed = sqrt(vx*vx+vy*vy);
-              double check_car_s = sensor_fusion[i][5]; 
+            //This will help to predict the where the vehicle will be in future
+            check_car_s += ((double)prev_size*0.02*check_speed);
 
-              //This will help to predict the where the vehicle will be in future
-              check_car_s += ((double)prev_size*0.02*check_speed);
+            if(check_car_lane == lane) {
+              //A vehicle is on the same line and check the car is in front of the ego car
+              car_ahead |= check_car_s > car_s && (check_car_s - car_s) < 30;       
 
-              if(check_car_lane == lane) {
-                //A vehicle is on the same line and check the car is in front of the ego car
-                car_ahead |= check_car_s > car_s && (check_car_s - car_s) < 30;       
+            } else if((check_car_lane - lane) == -1) {
+              //A vehicle is on the left lane and check that is in 30 meter range
+              car_left |= (car_s+30) > check_car_s  && (car_s-30) < check_car_s;
 
-              } else if((check_car_lane - lane) == -1) {
-                //A vehicle is on the left lane and check that is in 30 meter range
-                car_left |= (car_s+30) > check_car_s  && (car_s-30) < check_car_s;
-
-              } else if((check_car_lane - lane) == 1) {
-                //A vehicle is on the right lane and check that is in 30 meter range
-                car_right |= (car_s+30) > check_car_s  && (car_s-30) < check_car_s;
-              
-              }
+            } else if((check_car_lane - lane) == 1) {
+              //A vehicle is on the right lane and check that is in 30 meter range
+              car_right |= (car_s+30) > check_car_s  && (car_s-30) < check_car_s;
+            
             }
+          }
 
-            //BEHAVIOUR
-            /***
-            The behavioral planning component determines what behavior the vehicle should exhibit at any point in time. 
-            For example stopping at a traffic light or intersection, changing lanes, accelerating, or making a left turn onto a new street are all maneuvers that may be issued by this component.
-            ***/
-            if(car_ahead) {
+          //Second Part: BEHAVIOUR
+          /*
+          The behavioral planning component determines what behavior the vehicle should exhibit at any point in time.
+          Here we have the variables regarding to traffic, so based on whether there are traffic or not and there is a car ahead,
+          we can change lane.
+          */
+          // Car ahead of us
+          if(car_ahead) {
 
-              if(!car_left && lane > 0) {
-                lane--;
+            // No one at our left and we are at lane 1 or 2, change to left lane
+            if(!car_left && lane > 0) {
+              lane--;
 
-              } else if(!car_right && lane !=2) {
-                lane++;
+            // No one at our right and we are at lane 0 or 1, change to right lane
+            } else if(!car_right && lane !=2) {
+              lane++;
 
-              } else {
-                ref_vel -= speed_diff;
-              }
-            } else if(ref_vel < max_accel){
-              ref_vel += speed_diff;
-            }
-
-            vector<double> ptsx;
-            vector<double> ptsy;
-
-            double ref_x = car_x;
-            double ref_y = car_y;
-            double ref_yaw = deg2rad(car_yaw);
-
-            // Do I have have previous points
-            if ( prev_size < 2 ) {
-                // There are not too many...
-                double prev_car_x = car_x - cos(car_yaw);
-                double prev_car_y = car_y - sin(car_yaw);
-
-                ptsx.push_back(prev_car_x);
-                ptsx.push_back(car_x);
-
-                ptsy.push_back(prev_car_y);
-                ptsy.push_back(car_y);
+            // Car ahead but traffic at our sides, slow down
             } else {
-                // Use the last two points.
-                ref_x = previous_path_x[prev_size - 1];
-                ref_y = previous_path_y[prev_size - 1];
-
-                double ref_x_prev = previous_path_x[prev_size - 2];
-                double ref_y_prev = previous_path_y[prev_size - 2];
-                ref_yaw = atan2(ref_y-ref_y_prev, ref_x-ref_x_prev);
-
-                ptsx.push_back(ref_x_prev);
-                ptsx.push_back(ref_x);
-
-                ptsy.push_back(ref_y_prev);
-                ptsy.push_back(ref_y);
+              ref_vel -= speed_diff;
             }
 
-            // Setting up target points in the future.
-            vector<double> next_wp0 = getXY(car_s + 30, 2 + 4*lane, map_waypoints_s, map_waypoints_x, map_waypoints_y);
-            vector<double> next_wp1 = getXY(car_s + 60, 2 + 4*lane, map_waypoints_s, map_waypoints_x, map_waypoints_y);
-            vector<double> next_wp2 = getXY(car_s + 90, 2 + 4*lane, map_waypoints_s, map_waypoints_x, map_waypoints_y);
+          // We are slower than max speed
+          } else if (ref_vel < max_speed){
+            ref_vel += speed_diff;
+          }
 
-            ptsx.push_back(next_wp0[0]);
-            ptsx.push_back(next_wp1[0]);
-            ptsx.push_back(next_wp2[0]);
+          // Third Part: PATH PLANNING
+          /*
+          Here we already know what to do, so in order to do, we need to create a path which is jerk free. For that we need to
+          collect enough points to go through, and as adviced, we will use the header spline, which creates a smooth trajectory
+          based on the points collected.
+          */
 
-            ptsy.push_back(next_wp0[1]);
-            ptsy.push_back(next_wp1[1]);
-            ptsy.push_back(next_wp2[1]);
+          // From Q&A class in Project
+          vector<double> ptsx;
+          vector<double> ptsy;
 
-            // Making coordinates to local car coordinates.
-            for ( int i = 0; i < ptsx.size(); i++ ) {
-              double shift_x = ptsx[i] - ref_x;
-              double shift_y = ptsy[i] - ref_y;
+          double ref_x = car_x;
+          double ref_y = car_y;
+          double ref_yaw = deg2rad(car_yaw);
 
-              ptsx[i] = shift_x * cos(0 - ref_yaw) - shift_y * sin(0 - ref_yaw);
-              ptsy[i] = shift_x * sin(0 - ref_yaw) + shift_y * cos(0 - ref_yaw);
-            }
+          // Do I have have previous points
+          if ( prev_size < 2 ) {
 
-            // Create the spline.
-            tk::spline s;
-            s.set_points(ptsx, ptsy);
+            // Less than 2 points
+            double prev_car_x = car_x - cos(car_yaw);
+            double prev_car_y = car_y - sin(car_yaw);
 
-            // Output path points from previous path for continuity.
-            vector<double> next_x_vals;
-            vector<double> next_y_vals;
+            ptsx.push_back(prev_car_x);
+            ptsx.push_back(car_x);
 
-            for ( int i = 0; i < prev_size; i++ ) {
-              next_x_vals.push_back(previous_path_x[i]);
-              next_y_vals.push_back(previous_path_y[i]);
-            }
+            ptsy.push_back(prev_car_y);
+            ptsy.push_back(car_y);
 
-            // Calculate distance y position on 30 m ahead.
-            double target_x = 30.0;
-            double target_y = s(target_x);
-            double target_dist = sqrt(target_x*target_x + target_y*target_y);
+          } else {
 
-            double x_add_on = 0;
+            // Can use the last 2 points
+            ref_x = previous_path_x[prev_size - 1];
+            ref_y = previous_path_y[prev_size - 1];
 
-            for( int i = 1; i < 50 - prev_size; i++ ) {
+            double ref_x_prev = previous_path_x[prev_size - 2];
+            double ref_y_prev = previous_path_y[prev_size - 2];
+            ref_yaw = atan2(ref_y-ref_y_prev, ref_x-ref_x_prev);
 
-              double N = target_dist/(0.02*ref_vel/2.24);
-              double x_point = x_add_on + target_x/N;
-              double y_point = s(x_point);
+            ptsx.push_back(ref_x_prev);
+            ptsx.push_back(ref_x);
 
-              x_add_on = x_point;
+            ptsy.push_back(ref_y_prev);
+            ptsy.push_back(ref_y);
+          }
 
-              double x_ref = x_point;
-              double y_ref = y_point;
+          // Setting up target points in the future.
+          vector<double> next_wp0 = getXY(car_s + 30, 2 + 4*lane, map_waypoints_s, map_waypoints_x, map_waypoints_y);
+          vector<double> next_wp1 = getXY(car_s + 60, 2 + 4*lane, map_waypoints_s, map_waypoints_x, map_waypoints_y);
+          vector<double> next_wp2 = getXY(car_s + 90, 2 + 4*lane, map_waypoints_s, map_waypoints_x, map_waypoints_y);
 
-              //Rotate back to normal after rotating it earlier
-              x_point = x_ref * cos(ref_yaw) - y_ref * sin(ref_yaw);
-              y_point = x_ref * sin(ref_yaw) + y_ref * cos(ref_yaw);
-              x_point += ref_x;
-              y_point += ref_y;
-              
-              next_x_vals.push_back(x_point);
-              next_y_vals.push_back(y_point);
-            }
+          ptsx.push_back(next_wp0[0]);
+          ptsx.push_back(next_wp1[0]);
+          ptsx.push_back(next_wp2[0]);
+
+          ptsy.push_back(next_wp0[1]);
+          ptsy.push_back(next_wp1[1]);
+          ptsy.push_back(next_wp2[1]);
+
+          // Making coordinates to local car coordinates.
+          for ( int i = 0; i < ptsx.size(); i++ ) {
+            double shift_x = ptsx[i] - ref_x;
+            double shift_y = ptsy[i] - ref_y;
+
+            ptsx[i] = shift_x * cos(0 - ref_yaw) - shift_y * sin(0 - ref_yaw);
+            ptsy[i] = shift_x * sin(0 - ref_yaw) + shift_y * cos(0 - ref_yaw);
+          }
+
+          // Create the spline.
+          tk::spline s;
+          s.set_points(ptsx, ptsy);
+
+          // Output path points from previous path for continuity.
+          vector<double> next_x_vals;
+          vector<double> next_y_vals;
+
+          for ( int i = 0; i < prev_size; i++ ) {
+            next_x_vals.push_back(previous_path_x[i]);
+            next_y_vals.push_back(previous_path_y[i]);
+          }
+
+          // Calculate y position considering 30 meters ahead of car
+          double target_x = 30.0;
+          double target_y = s(target_x);
+          double target_dist = sqrt(target_x*target_x + target_y*target_y);
+
+          double x_add_on = 0;
+
+          // Generates the 50 points to pass to the simulator on the json msg
+          for( int i = 1; i < 50 - prev_size; i++ ) {
+
+            double N = target_dist/(0.02*ref_vel/2.24);
+            double x_point = x_add_on + target_x/N;
+            double y_point = s(x_point);
+
+            x_add_on = x_point;
+
+            double x_ref = x_point;
+            double y_ref = y_point;
+
+            //Rotate back to normal after rotating it earlier
+            x_point = x_ref * cos(ref_yaw) - y_ref * sin(ref_yaw);
+            y_point = x_ref * sin(ref_yaw) + y_ref * cos(ref_yaw);
+            x_point += ref_x;
+            y_point += ref_y;
+            
+            next_x_vals.push_back(x_point);
+            next_y_vals.push_back(y_point);
+          }
 
           json msgJson;
           msgJson["next_x"] = next_x_vals;
